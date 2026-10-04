@@ -8,6 +8,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import sklearn
 import streamlit as st
@@ -49,6 +50,21 @@ def response_curve(_model, _scaler, key):
     xs = np.linspace(H_MIN, H_MAX, 100)
     ys = np.asarray(_model.predict(_scaler.transform(xs.reshape(-1, 1)))).ravel()
     return xs, ys
+
+
+DATA_PATH = BASE / "models_notebook" / "SOCR-HeightWeight.csv"
+
+
+@st.cache_data
+def load_sample(n=1500):
+    """Optional real-data scatter (notebook conversions). Returns None if the CSV is absent."""
+    if not DATA_PATH.exists():
+        return None
+    try:
+        df = pd.read_csv(DATA_PATH, encoding="utf-8-sig").sample(n, random_state=42)
+        return df["Height(Inches)"] * 2.54, df["Weight(Pounds)"] * 0.45359237
+    except Exception:
+        return None
 
 
 model, scaler, load_error = load_artifacts()
@@ -182,6 +198,10 @@ with left:
 with right:
     xs, ys = response_curve(model, scaler, MODEL_NAME)
     fig = go.Figure()
+    sample = load_sample()
+    if sample is not None:
+        fig.add_scatter(x=sample[0], y=sample[1], mode="markers", name="SOCR data (sample)", hoverinfo="skip",
+                        marker=dict(size=4, color="rgba(139,147,163,.35)"))
     fig.add_scatter(x=xs, y=ys, mode="lines", name="Deployed model", line=dict(color=LIME, width=3),
                     fill="tozeroy", fillcolor="rgba(182,255,59,.06)",
                     hovertemplate="%{x:.0f} cm → %{y:.1f} kg<extra></extra>")
@@ -190,9 +210,10 @@ with right:
                     hovertemplate="%{x:.0f} cm → %{y:.1f} kg<extra></extra>")
     fig.update_xaxes(title="Height (cm)", gridcolor="rgba(255,255,255,.06)", zeroline=False)
     fig.update_yaxes(title="Predicted Weight (kg)", gridcolor="rgba(255,255,255,.06)", zeroline=False,
-                     range=[max(0, float(ys.min()) - 10), float(ys.max()) + 10])
+                     range=[30, 95] if sample is not None else [max(0, float(ys.min()) - 10), float(ys.max()) + 10])
     fig.update_layout(legend=dict(orientation="h", y=1.1, x=0))
     st.plotly_chart(style_fig(fig, 400), width="stretch")
+    st.caption("Notebook test set (20%): R² 0.26 · MAE 3.64 kg — height alone explains only part of the variation in weight.")
     html(f"""
     <div class="pipe">
     <div class="node"><div class="eyebrow">Input</div><div class="v">Height (cm)</div></div><div class="arrow">➜</div>
